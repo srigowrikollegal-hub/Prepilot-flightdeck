@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrepPilot · Flight Deck</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23ff6a2b%22/><text x=%2250%22 y=%2268%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22>✈</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="sky"></div>
+
+<!-- ============ GATE (login) ============ -->
+<section id="gate" class="screen">
+  <div class="gate-wrap">
+    <div class="gate-copy">
+      <div class="brand big"><span class="logo">✈</span>PrepPilot</div>
+      <h1>Your placement prep,<br><em>flown by a crew of AI agents.</em></h1>
+      <p>Paste a job description and your resume. The Analyst, Planner and Coach agents work out your gaps,
+        build a dated study plan and then interview you, remembering every score for next time.</p>
+      <ul class="gate-points">
+        <li><b>3</b> cooperating agents</li><li><b>8</b> real tools</li><li><b>40</b> rubric-graded questions</li>
+      </ul>
+    </div>
+    <form class="pass" id="loginForm" autocomplete="on">
+      <div class="pass-head"><span>BOARDING PASS</span><span class="mono">PP-2026</span></div>
+      <div class="pass-body">
+        <label>Passenger (username)<input id="lu" required minlength="3" autocomplete="username"></label>
+        <label>Password<input id="lp" type="password" required minlength="4" autocomplete="current-password"></label>
+        <div class="pass-row">
+          <button class="btn primary" type="submit" data-mode="login">Board</button>
+          <button class="btn ghost" type="button" id="regBtn">New passenger</button>
+        </div>
+        <p class="err" id="lerr"></p>
+      </div>
+      <div class="pass-stub">
+        <div><small>FROM</small><b>CAMPUS</b></div><div class="plane">✈</div><div><small>TO</small><b>OFFER</b></div>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<section id="app" class="screen hidden">
+  <header class="top">
+    <div class="brand"><span class="logo">✈</span>PrepPilot <small>FLIGHT DECK</small></div>
+    <nav id="nav">
+      <a data-go="preflight">01 Pre-flight</a>
+      <a data-go="plan">02 Flight plan</a>
+      <a data-go="cockpit">03 Cockpit</a>
+      <a data-go="logbook">04 Logbook</a>
+      <a data-go="why">Why PrepPilot</a>
+    </nav>
+    <div class="who"><span id="whoName"></span><button class="link" id="logout">Log out</button></div>
+  </header>
+
+  <!-- PRE-FLIGHT -->
+  <main id="preflight" class="page">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title"><span class="tag">DESTINATION</span>Job description</div>
+        <textarea id="jd" rows="11" placeholder="Paste the job description here"></textarea>
+        <div class="card-title"><span class="tag">CARGO</span>Your resume</div>
+        <textarea id="cv" rows="9" placeholder="Paste your resume text here"></textarea>
+        <div class="controls">
+          <label>Days <select id="days"><option>5</option><option selected>7</option><option>10</option><option>14</option></select></label>
+          <label>Hours / day <select id="hours"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+          <button class="btn ghost" id="sample">Load sample</button>
+          <button class="btn primary" id="takeoff">Take off ▸</button>
+        </div>
+      </div>
+      <div class="card dark blackbox">
+        <div class="bb-head">
+          <span class="rec" id="rec"></span> BLACK BOX RECORDER
+          <span class="bb-status mono" id="bbStatus">STANDBY</span>
+        </div>
+        <div class="crew">
+          <div class="crewm" data-agent="Analyst"><i>A</i>Analyst</div>
+          <div class="crewm" data-agent="Planner"><i>P</i>Planner</div>
+          <div class="crewm" data-agent="Coach"><i>C</i>Coach</div>
+        </div>
+        <div class="tape mono" id="tape"><div class="tape-empty">Every thought, tool call and observation of the crew appears here live.</div></div>
+        <div class="ops mono" id="opsLive"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- FLIGHT PLAN -->
+  <main id="plan" class="page hidden">
+    <div class="empty" id="planEmpty">No flight yet. Go to <a data-go="preflight">Pre-flight</a> and take off.</div>
+    <div id="planBody" class="hidden">
+      <div class="ticket">
+        <div class="t-left">
+          <small>ROUTE</small>
+          <h2 id="pRole"></h2>
+          <p id="pHead" class="headline"></p>
+          <div class="chips" id="pChips"></div>
+        </div>
+        <div class="t-gauges">
+          <div class="gauge" id="gReady"></div>
+          <div class="gauge" id="gMatch"></div>
+          <div class="gauge" id="gAts"></div>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="card">
+          <div class="card-title">Skill radar</div>
+          <div id="radar"></div>
+          <p class="note">Outer ring = job needs it. Filled = you have it on your resume or mastered it in the cockpit.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">ATS resume check <span class="pill" id="atsPill"></span></div>
+          <div id="ats"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Coach's briefing</div>
+          <ol id="actions" class="actions"></ol>
+          <p class="tip" id="tip"></p>
+          <div id="memNote" class="mem"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Itinerary <span class="sp"></span>
+          <a class="btn small primary" id="icsBtn">⬇ Add to calendar (.ics)</a>
+          <button class="btn small ghost" data-go="cockpit">Start mock interview ▸</button>
+        </div>
+        <div class="itin" id="itin"></div>
+      </div>
+      <div class="card dark">
+        <div class="card-title">Flight data (LLMOps)</div>
+        <div class="opsgrid mono" id="ops"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- COCKPIT -->
+  <main id="cockpit" class="page hidden">
+    <div class="empty" id="ckEmpty">Take off first so the crew knows which skills to test. <a data-go="preflight">Go to Pre-flight</a></div>
+    <div id="ckBody" class="grid2 hidden">
+      <div class="card">
+        <div class="qmeta"><span class="pill" id="qSkill"></span><span class="pill lvl" id="qLvl"></span><span class="mono src" id="qSrc"></span></div>
+        <h3 id="qText" class="qtext"></h3>
+        <p class="why" id="qWhy"></p>
+        <div class="hud mono">
+          <span>⏱ <b id="tmr">0:00</b></span><span>WPM <b id="wpm">0</b></span><span>FILLERS <b id="fill">0</b></span>
+          <span class="mic-state" id="micState"></span>
+        </div>
+        <textarea id="ans" rows="8" placeholder="Type your answer, or press the mic and speak it like a real interview"></textarea>
+        <div class="controls">
+          <button class="btn ghost" id="mic">🎙 Speak answer</button>
+          <button class="btn ghost" id="speak">🔊 Read question</button>
+          <span class="sp"></span>
+          <button class="btn primary" id="submitAns">Submit for grading</button>
+        </div>
+      </div>
+      <div class="card dark" id="evalCard">
+        <div class="card-title">Debrief</div>
+        <div id="evalBody" class="tape-empty">Your score, the rubric points you covered and missed, and a model answer appear here.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- LOGBOOK -->
+  <main id="logbook" class="page hidden">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">Interview scores over time</div>
+        <div id="trend"></div>
+        <div class="statrow" id="lbStats"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Skill mastery (remembered across sessions)</div>
+        <div id="mastery"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Past flights</div>
+      <div id="runs" class="runs"></div>
+    </div>
+  </main>
+
+  <!-- WHY -->
+  <main id="why" class="page hidden">
+    <div class="card">
+      <div class="card-title">"Can't ChatGPT do this?" — what PrepPilot does that a chat window can't</div>
+      <table class="cmp">
+        <thead><tr><th></th><th>General chatbot</th><th>PrepPilot</th></tr></thead>
+        <tbody>
+          <tr><td>Memory</td><td>Forgets your scores; you re-explain every time</td><td>Database stores every answer; mastery per skill decides the next question</td></tr>
+          <tr><td>Grading</td><td>Different score each time you ask</td><td>Fixed rubric per question from a 40-question bank, with a source id, plus LLM feedback</td></tr>
+          <tr><td>Skill match</td><td>Estimated in words, can hallucinate</td><td>Computed by code (20-skill taxonomy), the same every run</td></tr>
+          <tr><td>Agency</td><td>Answers one prompt</td><td>3 agents plan, call 8 tools and hand off; every step recorded in the black box</td></tr>
+          <tr><td>Actions</td><td>Gives text only</td><td>Creates a dated plan and exports it to your calendar (.ics)</td></tr>
+          <tr><td>Speaking practice</td><td>Text chat</td><td>Voice interview with words-per-minute and filler-word tracking</td></tr>
+          <tr><td>Reliability</td><td>Down when the model is down</td><td>Model fallback chain + offline autopilot, so the demo never breaks</td></tr>
+          <tr><td>Product</td><td>Shared chat</td><td>Accounts, REST API (<a href="/docs" target="_blank">/docs</a>), SQLite database, history</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Architecture</div>
+      <div class="arch">
+        <div class="ab">Browser UI<small>HTML · CSS · JS · Web Speech API</small></div><div class="ar">⇄ REST</div>
+        <div class="ab">FastAPI backend<small>auth · runs · interview · progress</small></div><div class="ar">⇄</div>
+        <div class="ab stack"><span>Agent crew<small>Analyst → Planner → Coach (ReAct)</small></span>
+          <span>Tools<small>skills · ATS · memory · resources · plan · interview</small></span></div><div class="ar">⇄</div>
+        <div class="ab stack"><span>Gemini API<small>function calling, fallback chain</small></span><span>SQLite<small>users · runs · answers · mastery</small></span></div>
+      </div>
+    </div>
+  </main>
+</section>
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
