@@ -1,7 +1,7 @@
 // PrepPilot Flight Deck - frontend
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
-const st = { token: null, user: null, runId: null, run: null, q: null };
+const st = { token: null, user: null, runId: null, run: null, q: null, admin: false, companies: [] };
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} },
@@ -36,9 +36,16 @@ $("#regBtn").addEventListener("click", () => { if ($("#loginForm").reportValidit
 function logout() { st.token = null; store.set("pp_token", null); $("#app").classList.add("hidden"); $("#gate").classList.remove("hidden"); }
 $("#logout").addEventListener("click", logout);
 
-async function enter() {
+async function enter(meInfo) {
   $("#gate").classList.add("hidden"); $("#app").classList.remove("hidden");
   $("#whoName").textContent = st.user;
+  try { const m = meInfo && meInfo.username ? meInfo : await api("/api/me"); st.admin = !!m.is_admin; } catch (e) {}
+  if (!st.companies.length) {
+    try { st.companies = await api("/api/companies");
+      $("#company").innerHTML = `<option value="">Any company</option>` + st.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+    } catch (e) {}
+  }
+  window.scrollTo(0, 0);
   const last = store.get("pp_run_" + st.user);
   if (last) { try { await loadRun(+last, false); } catch (e) {} }
   go(location.hash.slice(1) || "preflight");
@@ -52,8 +59,10 @@ function go(page) {
   history.replaceState(null, "", "#" + page);
   if (page === "plan") renderPlan();
   if (page === "cockpit") openCockpit();
-  if (page === "logbook") renderLogbook();
-  window.scrollTo(0, 0);
+  if (page === "dashboard") renderDashboard().catch((e) => toast(e.message));
+  if (page === "tower") openTower();
+  const hd = $("#mhead"), yTop = hd ? hd.offsetTop + hd.offsetHeight : 0;
+  if (window.scrollY > yTop) window.scrollTo(0, yTop);
 }
 document.addEventListener("click", (e) => { const a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); go(a.dataset.go); } });
 
@@ -63,7 +72,7 @@ $("#takeoff").addEventListener("click", async () => {
   const btn = $("#takeoff");
   try {
     btn.disabled = true; btn.textContent = "Crew working…";
-    const d = await api("/api/runs", { body: { jd: $("#jd").value, resume: $("#cv").value, days: +$("#days").value, hours: +$("#hours").value } });
+    const d = await api("/api/runs", { body: { jd: $("#jd").value, resume: $("#cv").value, days: +$("#days").value, hours: +$("#hours").value, company: $("#company").value } });
     st.runId = d.run_id; st.run = null; st.q = null;
     $("#tape").innerHTML = ""; seen = 0; $("#rec").classList.add("on"); $("#bbStatus").textContent = "RECORDING · FLIGHT #" + d.run_id;
     $$(".crewm").forEach((c) => c.classList.remove("on", "done"));
@@ -131,11 +140,11 @@ function radar(res) {
   [0.33, 0.66, 1].forEach((f) => { g += `<polygon points="${sk.map((_, i) => pt(i, R * f).join(",")).join(" ")}" fill="none" stroke="#d6c9b2" stroke-dasharray="${f < 1 ? "3 3" : ""}"/>`; });
   const val = (s) => Math.max(have.has(s) ? 0.7 : 0.12, (M[s] || 0) / 100);
   const poly = sk.map((s, i) => pt(i, R * val(s)).join(",")).join(" ");
-  g += `<polygon points="${poly}" fill="rgba(255,106,43,.25)" stroke="#ff6a2b" stroke-width="2"/>`;
+  g += `<polygon points="${poly}" fill="rgba(24,191,239,.25)" stroke="#18bfef" stroke-width="2"/>`;
   sk.forEach((s, i) => {
     const [x, y] = pt(i, R + 18), [px, py] = pt(i, R * val(s));
-    g += `<circle cx="${px}" cy="${py}" r="3.5" fill="${have.has(s) ? "#1f9b6f" : "#ff6a2b"}"/>
-      <text x="${x}" y="${y}" font-size="10.5" font-family="IBM Plex Sans" text-anchor="${x < cx - 5 ? "end" : x > cx + 5 ? "start" : "middle"}" dominant-baseline="middle" fill="#1c1b19">${esc(N[s])}</text>`;
+    g += `<circle cx="${px}" cy="${py}" r="3.5" fill="${have.has(s) ? "#1f9b6f" : "#18bfef"}"/>
+      <text x="${x}" y="${y}" font-size="10.5" font-family="Source Sans 3" text-anchor="${x < cx - 5 ? "end" : x > cx + 5 ? "start" : "middle"}" dominant-baseline="middle" fill="#1c1b19">${esc(N[s])}</text>`;
   });
   $("#radar").innerHTML = `<svg viewBox="-60 0 460 300" width="100%">${g}</svg>`;
 }
@@ -146,7 +155,7 @@ function renderPlan() {
   const r = d.result, N = r.skill_names;
   $("#pRole").textContent = r.role; $("#pHead").textContent = r.brief.headline || "";
   $("#pChips").innerHTML = r.matched.map((s) => `<span class="chip ok">${esc(N[s])}</span>`).join("") + r.missing.map((s) => `<span class="chip miss">${esc(N[s])}</span>`).join("");
-  gauge($("#gReady"), r.readiness, "READINESS", "#2fd6a0"); gauge($("#gMatch"), r.match, "SKILL MATCH", "#ffb02e"); gauge($("#gAts"), r.ats.ats_score, "ATS SCORE", "#ff6a2b");
+  gauge($("#gReady"), r.readiness, "READINESS", "#2fd6a0"); gauge($("#gMatch"), r.match, "SKILL MATCH", "#ffb02e"); gauge($("#gAts"), r.ats.ats_score, "ATS SCORE", "#18bfef");
   radar(r);
   const a = r.ats;
   $("#atsPill").textContent = a.ats_score + "/100";
@@ -160,6 +169,13 @@ function renderPlan() {
   $("#memNote").textContent = r.weak_memory.length ? "Memory: earlier interviews showed weakness in " + r.weak_memory.map((s) => N[s]).join(", ") + ", so these come first." : "Memory: no past interviews yet. Your scores from the cockpit will shape the next plan.";
   $("#itin").innerHTML = r.plan.map((p) => `<div class="day"><div class="d">DAY ${p.day}</div><div class="date">${new Date(p.date + "T00:00").toDateString()}</div>
     <div class="f">${esc(p.focus)}</div><ul>${p.blocks.map((b) => `<li>${b.url ? `<a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.what)}</a>` : esc(b.what)} <span>${b.mins}m</span></li>`).join("")}</ul></div>`).join("");
+  const cp = r.company_profile;
+  $("#compCard").classList.toggle("hidden", !cp);
+  if (cp) {
+    $("#compName").textContent = cp.name; $("#compTag").textContent = "COMPANY MODE"; $("#compTrack").textContent = cp.track;
+    $("#compRoute").innerHTML = cp.rounds.map((x, i) => `<div class="stop"><i>${i + 1}</i><b>${esc(x.name)}</b><p>${esc(x.tests)}</p><span class="sk">PREP: ${esc(N[x.skill] || x.skill)}</span></div>`).join("");
+    $("#compTip").innerHTML = "<b>Tip:</b> " + esc(cp.tip) + ` <span class="note">Typical pattern from 2026 prep guides. Check your drive's official notice.</span>`;
+  }
   $("#icsBtn").href = `/api/runs/${d.id}/plan.ics?token=${encodeURIComponent(st.token)}`;
   const m = d.metrics || {};
   const cell = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
@@ -221,7 +237,7 @@ $("#submitAns").addEventListener("click", async () => {
     $("#evalBody").className = "";
     $("#evalBody").innerHTML = `<div class="score"><div class="dial" style="background:${col}">${r.score}<small>/10</small></div>
       <div><div class="mono" style="color:#8fa3bd;font-size:12px">RUBRIC ${r.rubric.covered.length}/${r.rubric.covered.length + r.rubric.missed.length} KEY POINTS · ${esc(r.source)}</div>
-      <div style="font-size:14px;margin-top:6px">${esc(st.q.skill_name)} mastery now <b style="color:#2fd6a0">${Math.round(r.mastery)}/100</b> (saved)</div>
+      <div style="font-size:14px;margin-top:6px">${esc(st.q.skill_name)} mastery now <b style="color:#2fd6a0">${Math.round(r.mastery)}/100</b> (saved)${r.readiness != null ? ` · readiness <b style="color:#ffb02e">${r.readiness}</b>` : ""}</div>
       <div class="mono" style="color:#8fa3bd;font-size:12px;margin-top:4px">${$("#wpm").textContent} WPM · ${$("#fill").textContent} fillers · graded by ${esc(r.model)}</div></div></div>
       <div class="rub">${cov.map((c) => `<div class="y">${esc(c)}</div>`).join("")}${mis.map((c) => `<div class="n">${esc(c)}</div>`).join("")}</div>
       <div class="box"><b>FEEDBACK</b>${esc(r.feedback)}</div>
@@ -233,27 +249,135 @@ $("#submitAns").addEventListener("click", async () => {
   btn.disabled = false; btn.textContent = "Submit for grading";
 });
 
-/* ---------------- logbook ---------------- */
-async function renderLogbook() {
-  const [p, runs] = await Promise.all([api("/api/progress"), api("/api/runs")]);
-  const a = p.answers;
-  if (a.length < 2) $("#trend").innerHTML = `<p class="note">Answer at least 2 questions in the cockpit to see your trend.</p>`;
-  else {
-    const W = 520, H = 180, x = (i) => 30 + (i * (W - 50)) / (a.length - 1), y = (s) => H - 20 - (s / 10) * (H - 40);
-    const pts = a.map((r, i) => `${x(i)},${y(r.score)}`).join(" ");
-    $("#trend").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%">${[0, 5, 10].map((s) => `<line x1="30" x2="${W - 20}" y1="${y(s)}" y2="${y(s)}" stroke="#e4d9c6"/><text x="22" y="${y(s) + 4}" font-size="10" text-anchor="end" fill="#6f6656">${s}</text>`).join("")}
-      <polyline points="${pts}" fill="none" stroke="#ff6a2b" stroke-width="2.5"/>${a.map((r, i) => `<circle cx="${x(i)}" cy="${y(r.score)}" r="4" fill="#1c1b19"><title>${r.qid}: ${r.score}/10</title></circle>`).join("")}</svg>`;
-  }
-  const wpms = a.filter((r) => r.wpm > 0).map((r) => r.wpm);
-  $("#lbStats").innerHTML = `<div><b>${a.length}</b><span>ANSWERS</span></div><div><b>${p.avg_score ?? "–"}</b><span>AVG SCORE</span></div>
-    <div><b>${wpms.length ? Math.round(wpms.reduce((x, y) => x + y) / wpms.length) : "–"}</b><span>AVG WPM</span></div><div><b>${p.runs}</b><span>FLIGHTS</span></div>`;
-  const ms = Object.entries(p.mastery).sort((x, y) => x[1].score - y[1].score);
-  $("#mastery").innerHTML = ms.length ? ms.map(([k, v]) => `<div class="bar"><span>${esc(k)}</span><div class="track"><div class="fill" style="width:${v.score}%;background:${v.score >= 70 ? "#1f9b6f" : v.score >= 45 ? "#d98a00" : "#ff6a2b"}"></div></div><b>${Math.round(v.score)}</b></div>`).join("") : `<p class="note">No interview answers yet.</p>`;
-  $("#runs").innerHTML = runs.length ? runs.map((r) => `<div class="run" data-run="${r.id}"><span class="mono">#${r.id}</span><span>${esc(r.role)}</span>
-    <span class="mono">${new Date(r.created * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span><span>Match <b>${r.match ?? "–"}%</b></span><span>ATS <b>${r.ats ?? "–"}</b></span></div>`).join("") : `<p class="note">No flights yet.</p>`;
+/* ---------------- PDF upload (pre-flight + resume lab) ---------------- */
+async function readPdf(file, target) {
+  if (!file) return;
+  if (file.size > 5e6) return toast("PDF is larger than 5 MB");
+  const data = await new Promise((ok, bad) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = bad; fr.readAsDataURL(file); });
+  toast("Reading your PDF…");
+  try { const d = await api("/api/resume/pdf", { body: { data, name: file.name } }); $(target).value = d.text; toast(`Read ${d.pages} page${d.pages > 1 ? "s" : ""} from ${file.name}`); }
+  catch (e) { toast(e.message); }
+}
+$("#cvPdf").addEventListener("change", (e) => { readPdf(e.target.files[0], "#cv"); e.target.value = ""; });
+$("#rlPdf").addEventListener("change", (e) => { readPdf(e.target.files[0], "#rlCv"); e.target.value = ""; });
+
+/* ---------------- dashboard ---------------- */
+const tone = (v) => (v == null ? "#efe6d6" : v >= 70 ? "#2fd6a0" : v >= 40 ? "#ffb02e" : "#e5484d");
+function lineChart(pts, W = 560, H = 190) {
+  if (pts.length < 2) return `<p class="note">Take a flight and answer a question to start the line.</p>`;
+  const x = (i) => 34 + (i * (W - 50)) / (pts.length - 1), y = (v) => H - 22 - (v / 100) * (H - 40);
+  const d = pts.map((p, i) => `${x(i)},${y(p.v)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">${[0, 40, 70, 100].map((v) => `<line x1="34" x2="${W - 14}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 70 ? "#2fd6a0" : "#e4d9c6"}" ${v === 70 ? 'stroke-dasharray="5 4"' : ""}/><text x="26" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#6f6656">${v}</text>`).join("")}
+    <text x="${W - 16}" y="${y(70) - 5}" font-size="9.5" text-anchor="end" fill="#1f9b6f" font-family="IBM Plex Mono">PLACEMENT-READY</text>
+    <polygon points="${x(0)},${y(0)} ${d} ${x(pts.length - 1)},${y(0)}" fill="rgba(24,191,239,.12)"/>
+    <polyline points="${d}" fill="none" stroke="#18bfef" stroke-width="2.5"/>${pts.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.v)}" r="3.5" fill="#1c1b19"><title>${Math.round(p.v)}</title></circle>`).join("")}
+    <text x="${x(pts.length - 1)}" y="${y(pts[pts.length - 1].v) - 9}" font-size="12" font-weight="700" text-anchor="end" fill="#1c1b19">${Math.round(pts[pts.length - 1].v)}</text></svg>`;
+}
+function kpi(label, val, sub, cls = "") { return `<div class="kpi ${cls}"><span>${label}</span><b>${val ?? "–"}</b>${sub ? `<small class="${sub.cls || ""}">${sub.t}</small>` : ""}</div>`; }
+async function renderDashboard() {
+  const d = await api("/api/dashboard"), k = d.kpis;
+  $("#dbEmpty").classList.toggle("hidden", k.flights > 0); $("#dbBody").classList.toggle("hidden", k.flights === 0);
+  if (!k.flights) return;
+  const ch = k.readiness != null && k.readiness_start != null ? Math.round(k.readiness - k.readiness_start) : null;
+  $("#dbKpis").innerHTML = kpi("Readiness now", k.readiness, ch != null ? { t: (ch >= 0 ? "▲ " : "▼ ") + Math.abs(ch) + " since first flight", cls: ch >= 0 ? "up" : "down" } : null, "hot") +
+    kpi("Streak", k.streak + (k.streak ? " 🔥" : ""), { t: "best " + k.best_streak + " days" }) + kpi("Flights", k.flights, d.company ? { t: "target: " + d.company } : null) +
+    kpi("Answers", k.answers) + kpi("Avg score", k.avg_score, k.avg_score != null ? { t: "out of 10" } : null) + kpi("Avg WPM", k.avg_wpm, k.avg_fillers != null ? { t: k.avg_fillers + " fillers / answer" } : null);
+  $("#dbRChange").textContent = k.readiness != null ? "now " + k.readiness : "";
+  $("#dbReady").innerHTML = lineChart(d.readiness_series);
+  $("#dbStreak").textContent = k.streak ? k.streak + "-day streak" : "start a streak today";
+  const max = Math.max(1, ...d.activity.map((a) => a.count)), first = new Date(d.activity[0].date + "T00:00");
+  const pad = (first.getDay() + 6) % 7;
+  const active = d.activity.filter((a) => a.count).length, total = d.activity.reduce((x, a) => x + a.count, 0);
+  $("#dbCal").innerHTML = `<div class="calwrap"><div><div class="calhead">${["M", "T", "W", "T", "F", "S", "S"].map((x) => `<span>${x}</span>`).join("")}</div><div class="cal">` +
+    Array(pad).fill('<div style="visibility:hidden"></div>').join("") +
+    d.activity.map((a, i) => { const l = a.count === 0 ? "" : a.count / max > 0.66 ? "l3" : a.count / max > 0.33 ? "l2" : "l1";
+      return `<div class="${l} ${i === d.activity.length - 1 ? "today" : ""}" title="${a.date}: ${a.count} activities"></div>`; }).join("") +
+    `</div></div><div class="calside"><div><b>${k.streak}${k.streak ? "🔥" : ""}</b><span>CURRENT STREAK</span></div><div><b>${active}</b><span>ACTIVE DAYS / 28</span></div><div><b>${total}</b><span>FLIGHTS + ANSWERS</span></div></div></div>`;
+  $("#dbHeat").innerHTML = d.skills.map((x) => `<div class="${x.score == null ? "un" : ""} ${x.target ? "tg" : ""}" style="${x.score != null ? "background:" + tone(x.score) + (x.score >= 40 && x.score < 70 ? ";color:#1c1b19" : "") : ""}" title="${esc(x.name)}${x.n ? " · " + x.n + " answers" : ""}">${esc(x.name)}<b>${x.score == null ? "–" : Math.round(x.score)}</b></div>`).join("");
+  const lv = ["", "Easy", "Medium", "Hard"];
+  $("#dbLevel").innerHTML = Object.keys(d.by_level).length ? Object.entries(d.by_level).map(([l, v]) => `<div class="bar"><span>${lv[l]}</span><div class="track"><div class="fill" style="width:${v * 10}%;background:${tone(v * 10)}"></div></div><b>${v}</b></div>`).join("") : `<p class="note">No answers yet.</p>`;
+  const sp = d.speaking.filter((x) => x.wpm > 0);
+  $("#dbSpeak").innerHTML = sp.length ? `<svg viewBox="0 0 240 110" width="100%">${sp.map((x, i) => { const w = 220 / sp.length, h = Math.min(90, (x.wpm / 180) * 90);
+      return `<rect x="${10 + i * w + 2}" y="${100 - h}" width="${w - 4}" height="${h}" rx="3" fill="${x.wpm >= 110 && x.wpm <= 160 ? "#2fd6a0" : "#ffb02e"}"><title>${Math.round(x.wpm)} WPM, ${x.fillers} fillers</title></rect>${x.fillers ? `<text x="${10 + i * w + w / 2}" y="${96 - h}" font-size="9" text-anchor="middle" fill="#e5484d">${x.fillers}</text>` : ""}`; }).join("")}
+      <line x1="10" x2="230" y1="${100 - (110 / 180) * 90}" y2="${100 - (110 / 180) * 90}" stroke="#1c1b19" stroke-dasharray="3 3" opacity=".3"/></svg>
+      <p class="note">Bars = words per minute (green = 110-160, a clear pace). Red numbers = filler words.</p>` : `<p class="note">Use 🎙 in the cockpit to see your speaking pace.</p>`;
+  $("#dbWeak").innerHTML = d.weak.map((w) => `<div class="weak"><b>${esc(w.name)}</b><span>${esc(w.reason)}</span><button class="btn small ghost" data-go="cockpit">Practise ▸</button></div>`).join("") || `<p class="note">Nothing yet.</p>`;
+  $("#runs").innerHTML = d.runs.length ? d.runs.map((r) => `<div class="run" data-run="${r.id}"><span class="mono">#${r.id}</span><span>${esc(r.role)}</span>
+    <span class="mono">${new Date(r.created * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span><span>Match <b>${r.match ?? "–"}%</b></span><span class="mono">open ▸</span></div>`).join("") : `<p class="note">No flights yet.</p>`;
   $$(".run").forEach((el) => el.addEventListener("click", () => loadRun(+el.dataset.run).catch((e) => toast(e.message))));
 }
 
+/* ---------------- resume lab ---------------- */
+$("#rlFromPre").addEventListener("click", () => { if (!$("#cv").value.trim()) return toast("Pre-flight resume box is empty"); $("#rlCv").value = $("#cv").value; if ($("#jd").value.trim()) $("#rlJd").value = $("#jd").value; });
+const hl = (t) => esc(t).replace(/\[[^\]]+\]/g, (m) => `<mark>${m}</mark>`);
+let rlJd = "";
+$("#rlGo").addEventListener("click", async () => {
+  const btn = $("#rlGo"); btn.disabled = true; btn.textContent = "Editor agent working…";
+  try {
+    const r = await api("/api/resume/rewrite", { body: { resume: $("#rlCv").value, jd: $("#rlJd").value } });
+    rlJd = $("#rlJd").value;
+    const b = r.ats_before.ats_score, a = r.ats_after.ats_score;
+    $("#rlBody").className = "";
+    $("#rlBody").innerHTML = `<div class="ba"><div class="gauge" id="rlG1"></div><div class="arrow">→</div><div class="gauge" id="rlG2"></div>
+      <div class="mono" style="font-size:12px;color:#8fa3bd">${r.items.length} of ${r.bullets_checked} bullets rewritten<br>keywords from ${esc(r.jd_used)}<br>by ${esc(r.model)}</div></div>` +
+      (r.items.length ? r.items.map((x) => `<div class="rw"><div class="b">${esc(x.before)}</div><div class="a">${hl(x.after)}</div><div class="w">WHY: ${esc(x.why)}</div></div>`).join("")
+        : `<p>No weak bullets found. ${r.bullets_checked ? "Every bullet already starts with an action verb and has a number." : "Write your project points as bullet lines starting with - so the Editor can check them."}</p>`) +
+      `<div class="tips" style="color:#9fb3cc">${r.ats_after.tips.map((t) => "• " + esc(t)).join("<br>")}</div>`;
+    gauge($("#rlG1"), b, "ATS BEFORE", "#e5484d"); gauge($("#rlG2"), a, "ATS AFTER", "#2fd6a0");
+    $("#rlFinal").classList.remove("hidden"); $("#rlImproved").value = r.improved; $("#rlScore").textContent = "ATS " + a;
+  } catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = "Rewrite with Editor agent ▸";
+});
+$("#rlRescore").addEventListener("click", async () => {
+  try { const r = await api("/api/resume/score", { body: { resume: $("#rlImproved").value, jd: rlJd } }); $("#rlScore").textContent = "ATS " + r.ats_score; toast("New ATS score: " + r.ats_score); }
+  catch (e) { toast(e.message); }
+});
+$("#rlCopy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("#rlImproved").value); toast("Copied"); } catch (e) { $("#rlImproved").select(); toast("Press Ctrl+C to copy"); } });
+$("#rlUse").addEventListener("click", () => { $("#cv").value = $("#rlImproved").value; go("preflight"); toast("Improved resume loaded. Take off again to see the new scores."); });
+
+/* ---------------- control tower ---------------- */
+function openTower() {
+  $("#twLock").classList.toggle("hidden", st.admin); $("#twBody").classList.toggle("hidden", !st.admin);
+  if (st.admin) renderTower().catch((e) => toast(e.message));
+}
+$("#twUnlock").addEventListener("click", async () => {
+  try { await api("/api/tower/unlock", { body: { code: $("#twCode").value } }); st.admin = true; toast("Tower unlocked"); openTower(); } catch (e) { toast(e.message); }
+});
+$("#twCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#twUnlock").click(); });
+const hbar = (label, v, txt, col) => `<div class="bar"><span>${esc(label)}</span><div class="track"><div class="fill" style="width:${Math.min(100, v)}%;background:${col}"></div></div><b>${txt}</b></div>`;
+async function renderTower() {
+  const d = await api("/api/tower"), k = d.kpis;
+  $("#twKpis").innerHTML = kpi("Students", k.students, k.demo_students ? { t: k.demo_students + " demo" } : null, "hot") + kpi("Avg readiness", k.avg_readiness) +
+    kpi("Placement-ready", k.ready_percent + "%", { t: "readiness 70+" }) + kpi("At risk", k.at_risk, { t: "below 40", cls: k.at_risk ? "down" : "" }) +
+    kpi("Flights", k.flights) + kpi("Answers graded", k.answers);
+  const mx = Math.max(1, ...d.distribution.map((x) => x.count)), cols = ["#e5484d", "#ffb02e", "#9bd8bf", "#2fd6a0"];
+  $("#twDist").innerHTML = `<svg viewBox="0 0 300 170" width="100%">${d.distribution.map((x, i) => { const h = (x.count / mx) * 120;
+    return `<rect x="${20 + i * 70}" y="${140 - h}" width="50" height="${h}" rx="6" fill="${cols[i]}"/><text x="${45 + i * 70}" y="${134 - h}" text-anchor="middle" font-size="14" font-weight="800" font-family="Source Sans 3">${x.count}</text><text x="${45 + i * 70}" y="160" text-anchor="middle" font-size="11" fill="#6f6656" font-family="IBM Plex Mono">${x.band}</text>`; }).join("")}</svg>`;
+  $("#twGaps").innerHTML = d.gaps.length ? d.gaps.map((g) => hbar(g.skill, g.percent, g.percent + "%", "#18bfef")).join("") : `<p class="note">No data yet.</p>`;
+  $("#twWeak").innerHTML = d.weakest.length ? d.weakest.map((w) => hbar(w.skill, w.avg, w.avg, tone(w.avg))).join("") : `<p class="note">No interview answers yet.</p>`;
+  $("#twBoard").innerHTML = d.leaderboard.length ? `<table class="board"><thead><tr><th>#</th><th>STUDENT</th><th>READINESS</th><th>MATCH</th><th>AVG SCORE</th><th>STREAK</th><th>TARGET</th><th>TOP GAP</th></tr></thead><tbody>` +
+    d.leaderboard.map((r, i) => `<tr><td class="rk">${i + 1}</td><td>${esc(r.name)}${r.demo ? '<span class="demo">DEMO</span>' : ""}</td>
+      <td class="n"><span class="minibar" style="width:${r.readiness * 0.6}px;background:${tone(r.readiness)}"></span>${r.readiness}</td><td class="n">${r.match}%</td>
+      <td class="n">${r.avg_score ?? "–"}</td><td class="n">${r.streak ? r.streak + "🔥" : "–"}</td><td>${esc(r.company)}</td><td>${esc(r.top_gap)}</td></tr>`).join("") + "</tbody></table>"
+    : `<p class="note">No students have flown yet. Press <b>Load demo batch</b> to see how it looks with a class.</p>`;
+  $("#twRisk").innerHTML = d.at_risk.length ? d.at_risk.map((r) => `<div class="risk"><span>${esc(r.name)} · gap: ${esc(r.top_gap)}</span><b>${r.readiness}</b></div>`).join("") : `<p class="note">Nobody below 40% readiness.</p>`;
+  $("#twComp").innerHTML = d.companies.map((c) => `<span class="chip co">${esc(c.name)} · ${c.count}</span>`).join("");
+}
+$("#twDemo").addEventListener("click", async () => { try { const r = await api("/api/tower/demo", { body: {} }); toast(r.created ? `Added ${r.created} demo students` : "Demo batch already loaded"); renderTower(); } catch (e) { toast(e.message); } });
+$("#twClear").addEventListener("click", async () => { try { const r = await api("/api/tower/demo/clear", { body: {} }); toast(`Removed ${r.removed} demo students`); $("#twBriefCard").classList.add("hidden"); renderTower(); } catch (e) { toast(e.message); } });
+$("#twBrief").addEventListener("click", async () => {
+  const btn = $("#twBrief"); btn.disabled = true; btn.textContent = "Tower agent thinking…";
+  try {
+    const r = await api("/api/tower/briefing", { body: {} });
+    $("#twBriefCard").classList.remove("hidden"); $("#twModel").textContent = r.model || "";
+    $("#twBriefBody").innerHTML = `<p style="font-size:15px">${esc(r.summary)}</p>` + (r.recommendations || []).map((x) => `<div class="trec"><b>${esc(x.action)}</b><span>${esc(x.why)}</span></div>`).join("") +
+      (r.spotlight ? `<p class="mono" style="color:#ffb02e;font-size:12.5px;margin-top:10px">SPOTLIGHT · ${esc(r.spotlight)}</p>` : "");
+  } catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = "Ask Tower agent ▸";
+});
+
+document.querySelector(".scrolly").addEventListener("click", (e) => { e.preventDefault(); document.getElementById("board").scrollIntoView({ behavior: "smooth" }); });
+
 /* ---------------- boot ---------------- */
 st.token = store.get("pp_token"); st.user = store.get("pp_user");
-if (st.token) api("/api/me").then(enter).catch(() => logout());
+if (st.token) api("/api/me").then((m) => enter(m)).catch(() => logout());

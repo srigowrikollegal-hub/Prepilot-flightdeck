@@ -188,3 +188,88 @@ Projects:
 - PrepPilot: agentic AI placement assistant using Gemini function calling and Streamlit.
 Coursework: DBMS, Operating Systems, Deep Learning and NLP, LLM and Agentic AI
 Achievements: Amazon ML Challenge 2026 participant; Infosys System Engineer selection."""
+
+
+# ---------------------------------------------------------------- company mode
+# Typical fresher hiring rounds, collected from 2026 preparation guides (FACE Prep, PrepInsta,
+# placementpreparation.io, Unstop, candidate reports). Patterns change by drive: always check
+# the official notice for your drive.
+COMPANIES = {
+    "tcs": {"name": "TCS", "track": "Ninja / Digital / Prime (decided by NQT score)",
+            "rounds": [("NQT Foundation", "Numerical, verbal and reasoning ability", "aptitude"),
+                       ("NQT Advanced", "Advanced quant and reasoning + 2 coding problems", "dsa"),
+                       ("Technical interview", "CS fundamentals, projects, coding", "oop"),
+                       ("Managerial / HR interview", "Attitude, communication, flexibility", "communication")],
+            "focus": ["aptitude", "dsa", "oop", "dbms", "communication"],
+            "tip": "No negative marking in the NQT, and you cannot go back inside a section, so attempt every question in order."},
+    "infosys": {"name": "Infosys", "track": "Systems Engineer / Digital Specialist Engineer / Specialist Programmer",
+                "rounds": [("Online test", "Reasoning, mathematical ability, verbal ability, pseudocode (coding for DSE/SP)", "aptitude"),
+                           ("Technical interview", "Programming, DBMS, OS and your project", "dbms"),
+                           ("HR interview", "Communication, relocation, why Infosys", "communication")],
+                "focus": ["aptitude", "dsa", "dbms", "os", "oop", "communication"],
+                "tip": "Pseudocode questions test tracing logic, so practise dry-running loops on paper."},
+    "wipro": {"name": "Wipro", "track": "Elite NLTH (standard) / Turbo (higher band)",
+              "rounds": [("NLTH online test", "Aptitude, logical and verbal ability", "aptitude"),
+                         ("Written communication", "Short essay writing", "communication"),
+                         ("Coding", "2 programming problems (C, C++, Java or Python)", "dsa"),
+                         ("Technical + HR interview", "CS fundamentals, projects, HR questions", "oop")],
+              "focus": ["aptitude", "dsa", "oop", "communication"],
+              "tip": "Do not skip the essay: a blank or very short essay counts as an incomplete test."},
+    "accenture": {"name": "Accenture", "track": "Associate Software Engineer / Advanced ASE",
+                  "rounds": [("Communication assessment", "AI-graded spoken English", "communication"),
+                             ("Cognitive + technical assessment", "Critical and abstract reasoning, verbal, pseudocode, CS fundamentals", "aptitude"),
+                             ("Coding round", "2 problems in about 45 minutes", "dsa"),
+                             ("Technical + HR interview", "Projects, cloud and CS basics, HR", "cloud")],
+                  "focus": ["communication", "aptitude", "dsa", "cloud", "oop"],
+                  "tip": "Practise speaking answers aloud: the communication test is spoken, so use the voice mode in the cockpit."},
+    "cognizant": {"name": "Cognizant", "track": "GenC / GenC Next / GenC Pro",
+                  "rounds": [("Communication round", "Reading, repeating and arranging sentences, storytelling", "communication"),
+                             ("Aptitude test", "Quantitative, logical reasoning, verbal", "aptitude"),
+                             ("Technical / coding assessment", "Coding problems and technical MCQs", "dsa"),
+                             ("Interview", "Technical basics, SQL, projects, HR", "sql")],
+                  "focus": ["communication", "aptitude", "dsa", "sql", "oop"],
+                  "tip": "Use the same personal email everywhere: Cognizant sends all updates only to the registered email."},
+    "capgemini": {"name": "Capgemini", "track": "Analyst (A1) / Senior Analyst (A2)",
+                  "rounds": [("Pseudocode MCQs", "Tracing code logic without a specific language", "dsa"),
+                             ("English communication", "Grammar, comprehension, short writing", "communication"),
+                             ("Game-based aptitude", "Mini-games for memory, patterns and deduction", "aptitude"),
+                             ("Behavioural competency", "Situational judgement (not eliminatory)", "communication"),
+                             ("Technical + HR interview", "OOP, DBMS, projects, HR", "oop")],
+                  "focus": ["dsa", "aptitude", "communication", "oop", "dbms"],
+                  "tip": "The game-based round replaced logical-reasoning MCQs: stay calm and accurate, speed comes second."},
+    "amazon": {"name": "Amazon", "track": "SDE-1 (University hiring)",
+               "rounds": [("Online assessment", "2 DSA coding problems + work-style test on Leadership Principles", "dsa"),
+                          ("Technical rounds", "DSA problem solving (arrays, trees, graphs, DP)", "dsa"),
+                          ("Bar raiser / hiring manager", "Leadership Principles with STAR stories", "communication")],
+               "focus": ["dsa", "oop", "os", "communication"],
+               "tip": "Prepare 6 STAR stories that map to Leadership Principles such as Ownership and Customer Obsession."},
+}
+
+COMPANY_QUESTIONS = {
+    "CO-WHY": ("communication", 1, "Why do you want to join {company}?",
+               ["specific fact about the company", "how the role matches your skills", "growth and learning", "what you will contribute"]),
+    "CO-AMZ-1": ("communication", 2, "Tell me about a time you took ownership of a problem that was not your responsibility.",
+                 ["situation", "action you took yourself", "result with impact", "link to the ownership leadership principle"]),
+    "CO-PSEUDO-1": ("dsa", 1, "Trace this pseudocode and say what it prints: set x = 5; for i from 1 to 3: x = x + i; print x",
+                    ["x starts at 5", "adds 1 then 2 then 3", "prints 11"]),
+}
+PSEUDO_COMPANIES = {"infosys", "accenture", "capgemini"}
+
+
+def company_questions(cid):
+    if cid not in COMPANIES:
+        return []
+    name = COMPANIES[cid]["name"]
+    out = [("CO-WHY-" + cid.upper(), "communication", 1, f"Why do you want to join {name}?", COMPANY_QUESTIONS["CO-WHY"][3])]
+    if cid == "amazon":
+        q = COMPANY_QUESTIONS["CO-AMZ-1"]
+        out.append(("CO-AMZ-1", q[0], q[1], q[2], q[3]))
+    if cid in PSEUDO_COMPANIES:
+        q = COMPANY_QUESTIONS["CO-PSEUDO-1"]
+        out.append(("CO-PSEUDO-1", q[0], q[1], q[2], q[3]))
+    return out
+
+
+for _cid in COMPANIES:
+    for _q in company_questions(_cid):
+        QUESTION_BY_ID[_q[0]] = _q

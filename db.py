@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY, user_id INTEGER, created
 CREATE TABLE IF NOT EXISTS answers(id INTEGER PRIMARY KEY, user_id INTEGER, run_id INTEGER, qid TEXT, skill TEXT,
     question TEXT, answer TEXT, score REAL, feedback TEXT, wpm REAL, fillers INTEGER, created REAL);
 CREATE TABLE IF NOT EXISTS mastery(user_id INTEGER, skill TEXT, score REAL, n INTEGER, PRIMARY KEY(user_id, skill));
+CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY, user_id INTEGER, run_id INTEGER, created REAL, readiness REAL);
+CREATE TABLE IF NOT EXISTS admins(user_id INTEGER PRIMARY KEY, created REAL);
 """
 
 def conn():
@@ -67,13 +69,17 @@ def user_for(token):
         return None
     return q("SELECT u.id, u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?", (token,), one=True)
 
+def is_admin(uid):
+    return bool(q("SELECT 1 FROM admins WHERE user_id=?", (uid,), one=True))
+
+
 def get_mastery(uid):
     return {r["skill"]: (r["score"], r["n"]) for r in q("SELECT * FROM mastery WHERE user_id=?", (uid,))}
 
 def update_mastery(uid, skill, score10):
     """Exponential moving average of interview scores (0-100), so recent answers count more."""
     cur = q("SELECT * FROM mastery WHERE user_id=? AND skill=?", (uid, skill), one=True)
-    s = score10 * 10
+    s = round(score10 * 10, 1)
     if cur:
         new = round(0.6 * s + 0.4 * cur["score"], 1)
         ex("UPDATE mastery SET score=?, n=n+1 WHERE user_id=? AND skill=?", (new, uid, skill))

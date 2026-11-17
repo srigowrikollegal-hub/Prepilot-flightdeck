@@ -108,7 +108,10 @@ def parse_json(s):
 
 # ---------------------------------------------------------------- tools
 ACTION_VERBS = ["built", "developed", "designed", "implemented", "created", "led", "deployed", "trained",
-                "improved", "optimized", "analyzed", "automated", "engineered", "integrated", "reduced"]
+                "improved", "optimized", "analyzed", "automated", "engineered", "integrated", "reduced",
+                "architected", "streamlined", "launched", "delivered", "researched", "evaluated", "visualized",
+                "modeled", "collaborated", "presented", "achieved", "accelerated", "configured", "tested",
+                "documented", "scaled", "benchmarked", "coordinated", "organized", "migrated", "debugged"]
 SECTIONS = {"education": r"education|b\.?e\.?|b\.?tech|university|college", "skills": r"skills",
             "projects": r"projects?", "experience": r"experience|internship", "achievements": r"achievements?|awards?|certific"}
 
@@ -180,6 +183,16 @@ def t_recall_memory(S, **_):
             "weak_from_past_interviews": [kb.skill_name(k) for k in S["weak_memory"]]}
 
 
+def t_get_company_profile(S, **_):
+    c = kb.COMPANIES.get(S.get("company") or "")
+    if not c:
+        return {"company": None, "note": "No company selected, preparing for a general role."}
+    S["company_focus"] = c["focus"]
+    return {"company": c["name"], "track": c["track"],
+            "rounds": [f"{r[0]}: {r[1]}" for r in c["rounds"]],
+            "focus_skills": [kb.skill_name(x) for x in c["focus"]], "tip": c["tip"]}
+
+
 def _ids(names):
     out = []
     for n in names or []:
@@ -202,7 +215,9 @@ def t_build_study_plan(S, days=7, hours_per_day=2, priority_skills=None, **_):
     hours = max(1.0, min(6.0, float(hours_per_day or 2)))
     pri = _ids(priority_skills) or []
     weak = [s for s in S.get("weak_memory", []) if s in S.get("jd_skills", [])]
-    order = list(dict.fromkeys(pri + weak + S.get("missing", []) + S.get("matched", [])))
+    comp_focus = [x for x in S.get("company_focus", []) if x not in S.get("matched", [])]
+    order = list(dict.fromkeys(pri + weak + S.get("missing", []) + comp_focus + S.get("matched", [])))
+    company = kb.COMPANIES.get(S.get("company") or "")
     if not order:
         order = ["dsa", "aptitude", "communication"]
     start = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5.5)).date() + dt.timedelta(days=1)
@@ -215,6 +230,11 @@ def t_build_study_plan(S, days=7, hours_per_day=2, priority_skills=None, **_):
         if last:
             blocks = [{"what": "Full mock interview in the PrepPilot cockpit", "mins": int(hours * 30)},
                       {"what": "Revise the weakest two topics from your logbook", "mins": int(hours * 30)}]
+        elif company:
+            rnd = company["rounds"][d % len(company["rounds"])]
+            blocks = [{"what": f"Learn {kb.skill_name(sk)}: {res[0]}", "url": res[1], "mins": int(hours * 60 * 0.4)},
+                      {"what": f"{company['name']} round prep, {rnd[0]}: {rnd[1]}", "mins": int(hours * 60 * 0.3)},
+                      {"what": "DSA practice: 2 problems from the Striver A2Z sheet", "mins": int(hours * 60 * 0.3)}]
         else:
             blocks = [{"what": f"Learn {kb.skill_name(sk)}: {res[0]}", "url": res[1], "mins": int(hours * 60 * 0.5)},
                       {"what": "DSA practice: 2 problems from the Striver A2Z sheet", "mins": int(hours * 60 * 0.3)},
@@ -228,7 +248,7 @@ def t_build_study_plan(S, days=7, hours_per_day=2, priority_skills=None, **_):
 
 
 def t_schedule_mock_interview(S, focus_skills=None, **_):
-    ids = _ids(focus_skills) or (S.get("weak_memory", []) + S.get("missing", []) + S.get("matched", []))
+    ids = _ids(focus_skills) or (S.get("weak_memory", []) + S.get("missing", []) + S.get("company_focus", []) + S.get("matched", []))
     ids = [s for s in dict.fromkeys(ids) if kb.questions_for(s)][:5]
     S["interview_focus"] = ids
     return {"focus": [kb.skill_name(s) for s in ids],
@@ -245,6 +265,7 @@ TOOLS = {
     "compare_skills": (t_compare_skills, "Compare required skills with resume skills. Returns match %, matched and missing skills.", {}),
     "ats_check": (t_ats_check, "Score the resume like an Applicant Tracking System: keyword coverage, sections, action verbs, numbers.", {}),
     "recall_memory": (t_recall_memory, "Recall this user's past interview scores from the database to find weak skills.", {}),
+    "get_company_profile": (t_get_company_profile, "Get the selected company's hiring rounds, focus skills and a tip.", {}),
     "find_resources": (t_find_resources, "Get curated learning resources for skills.",
                        {"skills": {"type": "array", "items": {"type": "string"}, "description": "skill names"}}),
     "build_study_plan": (t_build_study_plan, "Build a day-by-day study plan with dates, focusing on priority skills first.",
@@ -277,12 +298,15 @@ AGENTS = [
 def run_crew(S, log, stats):
     """S: shared state (jd, resume, uid, days, hours). log(agent, type, text, data=None)."""
     for name, goal, tools in AGENTS:
+        if name == "Analyst" and S.get("company") in kb.COMPANIES:
+            tools = tools + ["get_company_profile"]
+            goal += f" The candidate is targeting {kb.COMPANIES[S['company']]['name']}."
         log(name, "handoff", f"{name} agent takes control. Goal: {goal}")
         sys = (f"You are the {name} agent in PrepPilot, a placement preparation crew. Goal: {goal} "
                f"Use the tools; call every tool at least once, in a sensible order. Before each tool call write one short "
                f"sentence starting with 'Thought:' explaining why. The user wants a {S['days']}-day plan with "
                f"{S['hours']} hours per day. When finished, reply with a 2-sentence handoff note for the next agent.")
-        ctx = {"analysis_so_far": {k: S[k] for k in ("role", "match", "missing", "weak_memory") if k in S}}
+        ctx = {"analysis_so_far": {k: S[k] for k in ("role", "company", "match", "missing", "weak_memory", "company_focus") if k in S}}
         contents = [{"role": "user", "parts": [{"text": "Start. Context: " + json.dumps(ctx, default=str)}]}]
         used, steps, auto = set(), 0, False
         while steps < 10:
@@ -341,7 +365,8 @@ def coach(S, log, stats):
     brief = None
     facts = {"role": S.get("role"), "match": S.get("match"), "matched": [kb.skill_name(s) for s in S.get("matched", [])],
              "missing": [kb.skill_name(s) for s in S.get("missing", [])], "ats": S.get("ats", {}).get("ats_score"),
-             "weak_memory": [kb.skill_name(s) for s in S.get("weak_memory", [])]}
+             "weak_memory": [kb.skill_name(s) for s in S.get("weak_memory", [])],
+             "company": (kb.COMPANIES.get(S.get("company") or "") or {}).get("name")}
     try:
         c, model = generate([{"role": "user", "parts": [{"text":
             "Facts from the other agents: " + json.dumps(facts) +
@@ -371,8 +396,13 @@ def readiness(S, mastery):
 
 
 # ---------------------------------------------------------------- interview
-def next_question(uid, focus, jd_skills, asked):
+def next_question(uid, focus, jd_skills, asked, company=None):
     m = db.get_mastery(uid)
+    if company in kb.COMPANIES and len(asked) >= 1:
+        for q in kb.company_questions(company):
+            if q[0] not in asked and (len(asked) == 1 or len(asked) % 3 == 0):
+                return {"qid": q[0], "skill": q[1], "skill_name": kb.skill_name(q[1]), "level": q[2], "question": q[3],
+                        "why": f"{kb.COMPANIES[company]['name']} special: this is asked in its hiring rounds."}
     base = [s for s in (focus or jd_skills or ["oop", "dbms", "communication"]) if kb.questions_for(s)]
     for s in (jd_skills or []):
         if s not in base and kb.questions_for(s):
@@ -424,3 +454,163 @@ def evaluate(qid, answer, stats):
     r["rubric"] = rubric
     r["source"] = f"PrepPilot question bank #{qid}"
     return r
+
+
+# ---------------------------------------------------------------- resume editor agent
+BULLET_CHARS = "•●▪◦‣–—·*-•▪●‣⁃"
+WEAK_STARTS = ["worked on", "responsible for", "was responsible for", "helped", "did", "was part of", "involved in",
+               "participated in", "assisted", "made", "used", "handled", "tried", "learned", "learnt", "doing"]
+SWAP = ["Developed", "Engineered", "Designed", "Implemented", "Built", "Delivered", "Created", "Automated"]
+
+
+def normalize_resume(text):
+    """Turn any bullet symbol into '- ' and join bullet lines that a PDF split in two."""
+    out = []
+    for raw in (text or "").replace("\r", "").split("\n"):
+        line = raw.strip()
+        if not line:
+            out.append("")
+            continue
+        c0 = line[0]
+        odd = (not c0.isalnum()) and c0 not in "([{\"'#+@&/" and len(line) > 1 and line[1] in " \t"
+        if c0 in BULLET_CHARS or odd or "\ue000" <= c0 <= "\uf8ff":
+            if c0 in "-*" and len(line) > 1 and line[1] not in " \t":
+                out.append(line)
+                continue
+            out.append("- " + line[1:].lstrip(BULLET_CHARS + " \t"))
+        elif out and out[-1].startswith("- ") and line[0].islower():
+            out[-1] += " " + line
+        else:
+            out.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def weak_reasons(b):
+    low = b.lower()
+    first = re.findall(r"[a-z]+", low)[:1]
+    r = []
+    if any(low.startswith(w) for w in WEAK_STARTS):
+        r.append("starts with a weak phrase")
+    elif not first or first[0] not in ACTION_VERBS:
+        r.append("does not start with a strong action verb")
+    if not re.search(r"\d", b):
+        r.append("no number or measurable result")
+    if len(b.split()) < 7:
+        r.append("too short to show impact")
+    return r
+
+
+PHRASE_VERB = {"was responsible for": "Owned", "responsible for": "Owned", "worked on": "Developed", "helped": "Supported",
+               "assisted": "Supported", "made": "Built", "used": "Applied", "handled": "Managed", "was part of": "Contributed to",
+               "participated in": "Contributed to", "involved in": "Contributed to", "did": "Completed", "doing": "Completed",
+               "learned": "Learned and applied", "learnt": "Learned and applied", "tried": "Experimented with"}
+IRREGULAR = {"making": "Made", "building": "Built", "writing": "Wrote", "running": "Ran", "leading": "Led",
+             "setting": "Set", "teaching": "Taught", "getting": "Got", "doing": "Did", "planning": "Planned"}
+
+
+def _gerund_to_past(w):
+    lw = w.lower()
+    if lw in IRREGULAR:
+        return IRREGULAR[lw]
+    return (lw[:-3] + "ed").capitalize()
+
+
+def rule_rewrite(b, k=0):
+    """Offline fallback: stronger verb, never invented facts, placeholder for a number."""
+    core, verb = b.strip().rstrip(". "), None
+    for w in sorted(PHRASE_VERB, key=len, reverse=True):
+        if core.lower().startswith(w):
+            core, verb = core[len(w):].strip(" ,:-"), PHRASE_VERB[w]
+            break
+    words = core.split()
+    if words and words[0].lower().endswith("ing") and len(words[0]) > 5:
+        core = _gerund_to_past(words[0]) + (" " + " ".join(words[1:]) if len(words) > 1 else "")
+        core = re.sub(r"\b(and|then) ([a-z]{3,}ing)\b", lambda m: m.group(1) + " " + _gerund_to_past(m.group(2)).lower(), core)
+    elif verb:
+        core = verb + " " + core
+    else:
+        first = (re.findall(r"[A-Za-z]+", core)[:1] or [""])[0].lower()
+        core = core[:1].upper() + core[1:] if first in ACTION_VERBS else SWAP[k % len(SWAP)] + " " + core[:1].lower() + core[1:]
+    if len(core.split()) < 5:
+        core += " [add detail: what exactly, and which tool]"
+    if not re.search(r"\d", core):
+        core += ", achieving [add a measurable result, e.g. X% accuracy or N users]"
+    return core
+
+
+def rewrite_resume(resume, jd, stats):
+    text = normalize_resume(resume)
+    lines = text.split("\n")
+    cands = [(i, l[2:].strip(), weak_reasons(l[2:].strip())) for i, l in enumerate(lines) if l.startswith("- ")]
+    weak = [c for c in cands if c[2]][:8]
+    items, model = [], "rule-based editor (offline)"
+    if weak:
+        try:
+            payload = [{"i": i, "bullet": b, "problems": r} for i, b, r in weak]
+            c, model = generate([{"role": "user", "parts": [{"text":
+                "You are the Editor agent of PrepPilot, improving resume bullets for Indian campus placements.\n"
+                "Rules: start every bullet with a different strong past-tense action verb; keep ONLY facts that are in the "
+                "original bullet; NEVER invent numbers, tools, users or results. Where a number would make the bullet "
+                "stronger, insert a placeholder in square brackets such as [X%] or [N users] for the student to fill. "
+                "Use job keywords only if the original bullet supports them. Max 28 words per bullet. Avoid generic AI phrases.\n"
+                f"Job description (for keywords): {jd[:1500]}\nBullets: {json.dumps(payload)}\n"
+                'Return JSON: {"items": [{"i": same index, "after": "rewritten bullet", "why": "one short reason"}]}'}]}],
+                json_mode=True, stats=stats)
+            got = {int(x["i"]): x for x in parse_json(text_of(c)).get("items", []) if "i" in x and x.get("after")}
+            for i, b, r in weak:
+                if i in got:
+                    items.append({"i": i, "before": b, "after": str(got[i]["after"]).lstrip("-• ").strip(),
+                                  "why": str(got[i].get("why", "; ".join(r)))})
+        except Exception:
+            items = []
+    if weak and not items:
+        model = "rule-based editor (offline)"
+        for k, (i, b, r) in enumerate(weak):
+            items.append({"i": i, "before": b, "after": rule_rewrite(b, k), "why": "; ".join(r).capitalize()})
+    for it in items:
+        lines[it["i"]] = "- " + it["after"]
+    improved = "\n".join(lines)
+    S0 = {"resume": text, "jd": jd}
+    S1 = {"resume": improved, "jd": jd}
+    before, after = t_ats_check(S0), t_ats_check(S1)
+    return {"normalized": text, "improved": improved, "items": items, "bullets_checked": len(cands),
+            "ats_before": before, "ats_after": after, "model": model}
+
+
+# ---------------------------------------------------------------- control tower agent
+def tower_briefing(facts, stats):
+    try:
+        c, model = generate([{"role": "user", "parts": [{"text":
+            "You are the Tower agent of PrepPilot, advising a college placement officer. Use ONLY these batch facts: "
+            + json.dumps(facts) +
+            '\nReturn JSON: {"summary": "2 sentences on the batch", "recommendations": [3 items, each '
+            '{"action": "specific action for the placement cell", "why": "reason citing the numbers"}], '
+            '"spotlight": "one sentence on who needs attention first"}'}]}], json_mode=True, stats=stats)
+        r = parse_json(text_of(c))
+        if r.get("recommendations"):
+            r["model"] = model
+            r["recommendations"] = [x if isinstance(x, dict) else {"action": str(x), "why": ""} for x in r["recommendations"]][:4]
+            return r
+    except Exception:
+        pass
+    gaps, risk = facts.get("top_gaps", []), facts.get("at_risk", [])
+    recs = []
+    if gaps:
+        art = "an" if gaps[0]["skill"][:1] in "AEIOU" else "a"
+        recs.append({"action": f"Run {art} {gaps[0]['skill']} workshop this week",
+                     "why": f"{gaps[0]['percent']}% of students are missing {gaps[0]['skill']}."})
+    if len(gaps) > 1:
+        recs.append({"action": f"Add {gaps[1]['skill']} practice to the weekly mock test",
+                     "why": f"It is the next biggest gap ({gaps[1]['percent']}% of students)."})
+    if risk:
+        recs.append({"action": "Pair at-risk students with placed seniors for 1-on-1 mock interviews",
+                     "why": f"{len(risk)} students are below 40% readiness."})
+    if facts.get("weakest"):
+        w = facts["weakest"][0]
+        recs.append({"action": f"Schedule a doubt-clearing session on {w['skill']}",
+                     "why": f"It has the lowest average interview mastery ({w['avg']}/100)."})
+    return {"summary": f"{facts.get('students', 0)} students are preparing, with average readiness "
+                       f"{facts.get('avg_readiness', 0)}%. {facts.get('ready_percent', 0)}% are placement-ready (70+).",
+            "recommendations": recs[:3] or [{"action": "Ask students to complete their first PrepPilot flight", "why": "No data yet."}],
+            "spotlight": ("Start with " + ", ".join(r["name"] for r in risk[:3]) + ".") if risk else "No student is below 40% readiness.",
+            "model": "rule-based (offline)"}
