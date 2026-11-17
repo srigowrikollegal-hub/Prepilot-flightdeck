@@ -5,17 +5,28 @@ API docs:     /docs
 """
 import datetime as dt, json, os, sys, threading, time
 
-sys.path.insert(0, os.path.dirname(__file__))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+os.environ.setdefault("DB_PATH", os.path.join(HERE, "data", "preppilot.db"))
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import agent, db, kb
 
 app = FastAPI(title="PrepPilot Flight Deck API", version="2.0",
               description="Backend for PrepPilot: multi-agent placement preparation with memory.")
-WEB = os.path.join(os.path.dirname(__file__), "..", "web")
+
+
+def find_web():
+    """Works whether the files sit in server/ + web/ folders or all in one folder."""
+    for d in (os.path.join(HERE, "..", "web"), os.path.join(HERE, "web"), HERE, os.path.join(HERE, "..")):
+        if os.path.exists(os.path.join(d, "index.html")):
+            return os.path.abspath(d)
+    return HERE
+
+
+WEB = find_web()
 LIVE = {}  # run_id -> live state while the crew is working
 db.init()
 
@@ -225,4 +236,11 @@ def index():
     return FileResponse(os.path.join(WEB, "index.html"))
 
 
-app.mount("/", StaticFiles(directory=WEB), name="web")
+@app.get("/app.js")
+def app_js():
+    return FileResponse(os.path.join(WEB, "app.js"), media_type="application/javascript")
+
+
+@app.get("/style.css")
+def style_css():
+    return FileResponse(os.path.join(WEB, "style.css"), media_type="text/css")
