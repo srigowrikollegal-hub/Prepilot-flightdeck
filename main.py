@@ -543,14 +543,17 @@ def resume_score(r: ResumeIn, authorization: str = Header("")):
     return agent.t_ats_check({"resume": agent.normalize_resume(r.resume), "jd": jd})
 
 
+NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(WEB, "index.html"))
+    return FileResponse(os.path.join(WEB, "index.html"), headers=NO_CACHE)
 
 
 @app.get("/app.js")
 def app_js():
-    return FileResponse(os.path.join(WEB, "app.js"), media_type="application/javascript")
+    return FileResponse(os.path.join(WEB, "app.js"), media_type="application/javascript", headers=NO_CACHE)
 
 
 @app.get("/bg.jpg")
@@ -563,4 +566,4 @@ def bg_jpg():
 
 @app.get("/style.css")
 def style_css():
-    return FileResponse(os.path.join(WEB, "style.css"), media_type="text/css")
+    return FileResponse(os.path.join(WEB, "style.css"), media_type="text/css", headers=NO_CACHE)
