@@ -440,6 +440,10 @@ DEMO_NAMES = ["aarav", "diya", "rohan", "ananya", "karthik", "meera", "vikram", 
 def tower_demo(authorization: str = Header("")):
     """Fill the tower with 12 clearly labelled demo students (usernames start with demo_)."""
     admin(authorization)
+    return {"created": seed_demo()}
+
+
+def seed_demo():
     rng = random.Random(2026)
     comps = list(kb.COMPANIES)
     base = ["python", "oop", "dsa", "dbms", "sql", "os", "cn", "aptitude", "communication"]
@@ -483,7 +487,14 @@ def tower_demo(authorization: str = Header("")):
             db.ex("INSERT INTO snapshots(user_id,run_id,created,readiness) VALUES(?,?,?,?)",
                   (uid, rid, t, readiness_now(res, db.get_mastery(uid))))
         made += 1
-    return {"created": made}
+    return made
+
+
+if os.environ.get("AUTO_DEMO", "1") != "0":
+    try:
+        seed_demo()  # the Tower always has a labelled demo class, even after the free server restarts
+    except Exception as e:
+        print("demo seed skipped:", e)
 
 
 @app.post("/api/tower/demo/clear")
